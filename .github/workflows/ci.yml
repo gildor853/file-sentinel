@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Runner image is pinned explicitly (instead of ubuntu-latest, which moves to
+# 26.04 between 2026-10-19 and 2026-11-19) so an image switch is a deliberate
+# change. The jobs only need Node.js from actions/setup-node.
+# Actions are pinned to major tags; only GitHub-owned actions are used (the
+# repository allows nothing else).
+
+jobs:
+  test:
+    # vitest 5 requires Node ^22.12 || ^24 || >=26.
+    name: Test (Node ${{ matrix.node }})
+    runs-on: ubuntu-26.04
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [22, 24, 26]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+      - run: npm ci
+      - run: npm audit --audit-level=low
+      - run: npm run typecheck
+      - run: npm run test:coverage
+      - run: npm run build
+      - run: npm run smoke
+      - run: npm run check:readme
+      - run: npm run check:legal
+      - if: matrix.node == 24
+        uses: actions/upload-artifact@v7
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  runtime-smoke:
+    # The published package has zero runtime dependencies and supports
+    # Node >= 18 (package.json "engines"). The test toolchain no longer runs
+    # there, so run the built dist (ESM + CJS entries) with plain Node instead.
+    name: Runtime smoke (Node ${{ matrix.node }})
+    needs: test
+    runs-on: ubuntu-26.04
+    timeout-minutes: 5
+    strategy:
+      fail-fast: false
+      matrix:
+        node: [18, 20]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v5
+        with:
+          node-version: ${{ matrix.node }}
+      - uses: actions/download-artifact@v8
+        with:
+          name: dist
+          path: dist/
+      - run: node scripts/smoke.mjs
+      - run: node scripts/smoke.cjs

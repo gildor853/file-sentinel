@@ -1,0 +1,12 @@
+node_modules/
+dist/
+coverage/
+*.log
+.DS_Store
+*.tgz
+.readme-check/
+
+__pycache__/
+scripts/fixtures/out/
+*.pyc
+artifacts/
